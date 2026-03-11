@@ -18,6 +18,10 @@
       --text: #e8e8f0;
       --muted: #7070a0;
       --danger: #f87171;
+      --amber: #f59e0b;
+      --amber2: #fcd34d;
+      --fire: #f97316;
+      --fire2: #fb923c;
       --radius: 14px;
     }
 
@@ -27,12 +31,10 @@
       font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
       min-height: 100vh;
       padding: 2rem 1rem 4rem;
+      overflow-x: hidden;
     }
 
-    header {
-      text-align: center;
-      margin-bottom: 2.5rem;
-    }
+    header { text-align: center; margin-bottom: 2.5rem; }
 
     header h1 {
       font-size: 2rem;
@@ -44,22 +46,15 @@
       letter-spacing: -0.5px;
     }
 
-    header p {
-      color: var(--muted);
-      margin-top: 0.4rem;
-      font-size: 0.95rem;
-    }
+    header p { color: var(--muted); margin-top: 0.4rem; font-size: 0.95rem; }
 
-    .container {
-      max-width: 540px;
-      margin: 0 auto;
-    }
+    .container { max-width: 540px; margin: 0 auto; }
 
-    /* Add habit form */
+    /* ── Add form ──────────────────────────────────────────────── */
     .add-form {
       display: flex;
       gap: 0.6rem;
-      margin-bottom: 2rem;
+      margin-bottom: 0.75rem;
     }
 
     .add-form input {
@@ -93,7 +88,34 @@
     .add-form button:hover { background: var(--accent2); }
     .add-form button:active { transform: scale(0.95); }
 
-    /* Date strip */
+    /* ── Browse suggestions button ─────────────────────────────── */
+    .browse-btn {
+      background: none;
+      border: 1.5px dashed var(--border);
+      border-radius: var(--radius);
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      font-size: 0.88rem;
+      font-weight: 500;
+      padding: 0.6rem 1rem;
+      width: 100%;
+      margin-bottom: 1.75rem;
+      transition: border-color 0.2s, color 0.2s, background 0.2s;
+    }
+
+    .browse-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent2);
+      background: #6c63ff0d;
+    }
+
+    .browse-btn svg { flex-shrink: 0; }
+
+    /* ── Date strip ────────────────────────────────────────────── */
     .date-strip {
       display: flex;
       gap: 0.4rem;
@@ -102,7 +124,6 @@
       margin-bottom: 1.5rem;
       scrollbar-width: none;
     }
-
     .date-strip::-webkit-scrollbar { display: none; }
 
     .date-day {
@@ -121,11 +142,7 @@
       user-select: none;
     }
 
-    .date-day.active {
-      border-color: var(--accent);
-      background: #6c63ff1a;
-    }
-
+    .date-day.active { border-color: var(--accent); background: #6c63ff1a; }
     .date-day .day-name {
       color: var(--muted);
       font-size: 0.68rem;
@@ -133,21 +150,33 @@
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
-
-    .date-day .day-num {
-      font-size: 1rem;
-      font-weight: 700;
-    }
-
+    .date-day .day-num { font-size: 1rem; font-weight: 700; }
     .date-day.active .day-name,
     .date-day.active .day-num { color: var(--accent2); }
 
-    /* Habit cards */
-    .habits-list {
+    /* ── Summary bar ───────────────────────────────────────────── */
+    .summary {
+      background: var(--surface2);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
       display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+      overflow: hidden;
     }
+
+    .summary-item { flex: 1; padding: 0.8rem 0.5rem; text-align: center; }
+    .summary-item + .summary-item { border-left: 1.5px solid var(--border); }
+    .summary-val { font-size: 1.4rem; font-weight: 800; color: var(--accent2); }
+    .summary-label {
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 1px;
+    }
+
+    /* ── Habit cards ───────────────────────────────────────────── */
+    .habits-list { display: flex; flex-direction: column; gap: 0.75rem; }
 
     .habit-card {
       background: var(--surface);
@@ -157,49 +186,87 @@
       align-items: center;
       gap: 1rem;
       padding: 1rem 1.1rem;
-      transition: border-color 0.2s, background 0.2s;
       position: relative;
       overflow: hidden;
+      transition: border-color 0.3s, background 0.3s, box-shadow 0.3s;
     }
 
+    /* Left accent bar */
     .habit-card::before {
       content: '';
       position: absolute;
-      left: 0;
-      top: 0;
-      bottom: 0;
+      left: 0; top: 0; bottom: 0;
       width: 3px;
       background: var(--border);
       border-radius: 99px;
-      transition: background 0.2s;
+      transition: background 0.3s;
     }
 
-    .habit-card.done { background: #34d3991a; border-color: #34d39940; }
+    /* ── Streak tiers ──────────────────────────────────────────── */
+
+    /* Tier 1: active streak (1-3 days) — subtle purple */
+    .habit-card.streak-active { border-color: #6c63ff33; }
+    .habit-card.streak-active::before { background: var(--accent); }
+
+    /* Tier 2: warm streak (4-6 days) — amber/gold */
+    .habit-card.streak-warm {
+      border-color: #f59e0b40;
+      background: #f59e0b06;
+    }
+    .habit-card.streak-warm::before { background: var(--amber); }
+
+    /* Tier 3: hot streak (7+ days) — fire orange with pulse */
+    .habit-card.streak-hot {
+      border-color: #f9731650;
+      background: #f9731608;
+    }
+    .habit-card.streak-hot::before {
+      background: linear-gradient(180deg, #fbbf24, #f97316, #ef4444);
+    }
+
+    @keyframes glow-pulse {
+      0%, 100% { box-shadow: 0 0 6px #f9731620, 0 0 0 0 transparent; }
+      50%       { box-shadow: 0 0 18px #f9731640, 0 0 30px #f9731415; }
+    }
+    .habit-card.streak-hot { animation: glow-pulse 2.4s ease-in-out infinite; }
+
+    /* ── Done state ────────────────────────────────────────────── */
+    .habit-card.done { background: #34d39912; border-color: #34d39940; }
     .habit-card.done::before { background: var(--success); }
 
-    /* Checkbox */
+    /* Streak tiers override done background/border to keep streak color */
+    .habit-card.streak-warm.done { background: #f59e0b14; border-color: #f59e0b55; }
+    .habit-card.streak-warm.done::before { background: var(--amber); }
+    .habit-card.streak-hot.done   { background: #f9731614; border-color: #f9731655; }
+    .habit-card.streak-hot.done::before { background: linear-gradient(180deg, #fbbf24, #f97316, #ef4444); }
+
+    /* ── Check button ──────────────────────────────────────────── */
     .check-btn {
       background: none;
       border: 2px solid var(--border);
       border-radius: 50%;
       cursor: pointer;
       flex-shrink: 0;
-      height: 28px;
-      width: 28px;
+      height: 30px;
+      width: 30px;
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: border-color 0.2s, background 0.2s;
+      transition: border-color 0.2s, background 0.2s, transform 0.15s;
+      position: relative;
+      z-index: 1;
     }
 
-    .check-btn svg { display: none; }
+    .check-btn:hover { border-color: var(--success); transform: scale(1.1); }
+
+    .check-btn .check-icon { display: none; }
     .habit-card.done .check-btn {
       background: var(--success);
       border-color: var(--success);
     }
-    .habit-card.done .check-btn svg { display: block; }
+    .habit-card.done .check-btn .check-icon { display: block; }
 
-    /* Habit info */
+    /* ── Habit info ────────────────────────────────────────────── */
     .habit-info { flex: 1; min-width: 0; }
 
     .habit-name {
@@ -208,6 +275,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      transition: color 0.2s;
     }
 
     .habit-card.done .habit-name {
@@ -218,32 +286,39 @@
     .habit-meta {
       color: var(--muted);
       font-size: 0.78rem;
-      margin-top: 0.2rem;
+      margin-top: 0.25rem;
       display: flex;
       align-items: center;
-      gap: 0.7rem;
+      gap: 0.6rem;
     }
 
     .streak-badge {
       display: inline-flex;
       align-items: center;
-      gap: 0.2rem;
+      gap: 0.25rem;
       background: #6c63ff22;
       border: 1px solid #6c63ff44;
       border-radius: 6px;
       color: var(--accent2);
-      font-size: 0.75rem;
+      font-size: 0.74rem;
       font-weight: 700;
       padding: 1px 7px;
+      transition: background 0.3s, border-color 0.3s, color 0.3s;
     }
 
-    .streak-badge.hot {
-      background: #f97316222;
-      border-color: #f9731644;
-      color: #fb923c;
+    .habit-card.streak-warm .streak-badge {
+      background: #f59e0b22;
+      border-color: #f59e0b55;
+      color: var(--amber2);
     }
 
-    /* Delete button */
+    .habit-card.streak-hot .streak-badge {
+      background: #f9731622;
+      border-color: #f9731655;
+      color: var(--fire2);
+    }
+
+    /* ── Delete button ─────────────────────────────────────────── */
     .delete-btn {
       background: none;
       border: none;
@@ -251,70 +326,255 @@
       cursor: pointer;
       font-size: 1rem;
       line-height: 1;
-      padding: 4px;
+      padding: 5px;
       border-radius: 6px;
       transition: color 0.2s, background 0.2s;
       flex-shrink: 0;
+      opacity: 0;
+      transition: opacity 0.15s, color 0.2s, background 0.2s;
     }
-
+    .habit-card:hover .delete-btn { opacity: 1; }
     .delete-btn:hover { color: var(--danger); background: #f8717122; }
 
-    /* Empty state */
+    /* ── Ripple ────────────────────────────────────────────────── */
+    @keyframes ripple-out {
+      0%   { transform: translate(-50%, -50%) scale(0); opacity: 0.5; }
+      100% { transform: translate(-50%, -50%) scale(4); opacity: 0; }
+    }
+
+    .ripple {
+      position: absolute;
+      left: 36px;
+      top: 50%;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: var(--success);
+      pointer-events: none;
+      animation: ripple-out 0.55s ease-out forwards;
+    }
+
+    /* ── Card completion bounce ────────────────────────────────── */
+    @keyframes card-complete {
+      0%   { transform: scale(1); }
+      35%  { transform: scale(1.035); }
+      65%  { transform: scale(0.985); }
+      100% { transform: scale(1); }
+    }
+
+    .habit-card.completing {
+      animation: card-complete 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) forwards !important;
+    }
+
+    /* ── Empty state ───────────────────────────────────────────── */
     .empty {
       text-align: center;
       color: var(--muted);
       padding: 3rem 1rem;
     }
-
-    .empty svg { opacity: 0.3; margin-bottom: 1rem; }
+    .empty svg { opacity: 0.25; margin-bottom: 1rem; }
     .empty p { font-size: 0.95rem; }
 
-    /* Summary bar */
-    .summary {
-      background: var(--surface2);
-      border: 1.5px solid var(--border);
-      border-radius: var(--radius);
+    /* ── Suggestions Modal ─────────────────────────────────────── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(4px);
+      z-index: 100;
       display: flex;
-      gap: 1px;
-      margin-bottom: 1.5rem;
+      align-items: flex-end;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s;
+    }
+
+    .modal-overlay.open {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .modal {
+      background: #16161f;
+      border: 1.5px solid var(--border);
+      border-radius: 20px 20px 0 0;
+      width: 100%;
+      max-width: 600px;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      transform: translateY(100%);
+      transition: transform 0.3s cubic-bezier(0.34, 1.2, 0.64, 1);
+    }
+
+    .modal-overlay.open .modal {
+      transform: translateY(0);
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.2rem 1.4rem 0.8rem;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .modal-header h2 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .modal-close {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1.1rem;
+      line-height: 1;
+      padding: 4px 9px;
+      transition: color 0.2s, background 0.2s;
+    }
+    .modal-close:hover { color: var(--text); background: var(--border); }
+
+    .modal-body {
+      overflow-y: auto;
+      padding: 1rem 1.4rem 2rem;
+      flex: 1;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .modal-cat { margin-bottom: 1.5rem; }
+
+    .modal-cat-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.65rem;
+    }
+
+    .modal-cat-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .modal-cat-name {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--muted);
+    }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+
+    .chip {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 99px;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.84rem;
+      font-weight: 500;
+      padding: 0.35rem 0.9rem;
+      transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.1s;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .chip:hover:not(.chip-added) {
+      border-color: var(--accent);
+      background: #6c63ff15;
+      color: var(--accent2);
+      transform: scale(1.04);
+    }
+
+    .chip:active:not(.chip-added) { transform: scale(0.97); }
+
+    .chip.chip-added {
+      opacity: 0.45;
+      cursor: default;
+      border-style: dashed;
+    }
+
+    .chip-check {
+      width: 13px;
+      height: 13px;
+      display: none;
+    }
+    .chip.chip-added .chip-check { display: block; }
+
+    /* ── Particle canvas (fixed overlay) ──────────────────────── */
+    #particle-layer {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
       overflow: hidden;
     }
 
-    .summary-item {
-      flex: 1;
-      padding: 0.8rem 0.5rem;
+    .particle {
+      position: absolute;
+      border-radius: 50%;
+      pointer-events: none;
+      will-change: transform, opacity;
+    }
+
+    /* ── All-done celebration banner ──────────────────────────── */
+    @keyframes banner-in {
+      0%   { transform: translateY(-20px); opacity: 0; }
+      60%  { transform: translateY(4px); opacity: 1; }
+      100% { transform: translateY(0); opacity: 1; }
+    }
+
+    @keyframes banner-out {
+      to { opacity: 0; transform: translateY(-10px); }
+    }
+
+    .all-done-banner {
+      background: linear-gradient(135deg, #34d39920, #6c63ff20);
+      border: 1.5px solid #34d39950;
+      border-radius: var(--radius);
       text-align: center;
+      padding: 0.9rem 1rem;
+      margin-bottom: 1rem;
+      animation: banner-in 0.5s cubic-bezier(0.34, 1.3, 0.64, 1) both;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--success);
     }
-
-    .summary-item + .summary-item {
-      border-left: 1.5px solid var(--border);
-    }
-
-    .summary-val {
-      font-size: 1.4rem;
-      font-weight: 800;
-      color: var(--accent2);
-    }
-
-    .summary-label {
-      font-size: 0.7rem;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-top: 1px;
-    }
-
-    /* Animations */
-    @keyframes pop {
-      0% { transform: scale(1); }
-      50% { transform: scale(1.06); }
-      100% { transform: scale(1); }
-    }
-
-    .habit-card.pop { animation: pop 0.25s ease; }
   </style>
 </head>
 <body>
+
+  <!-- Particle layer -->
+  <div id="particle-layer"></div>
+
+  <!-- Suggestions Modal -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal" id="modal">
+      <div class="modal-header">
+        <h2>Browse Habit Ideas</h2>
+        <button class="modal-close" id="modal-close" aria-label="Close">&#x2715;</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
   <div class="container">
     <header>
       <h1>Habit Tracker</h1>
@@ -322,13 +582,22 @@
     </header>
 
     <form class="add-form" id="add-form">
-      <input type="text" id="habit-input" placeholder="Add a new habit..." maxlength="60" autocomplete="off" />
+      <input type="text" id="habit-input" placeholder="Name your habit..." maxlength="60" autocomplete="off" />
       <button type="submit" aria-label="Add habit">+</button>
     </form>
 
+    <button class="browse-btn" id="browse-btn">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      Browse habit ideas
+    </button>
+
     <div class="date-strip" id="date-strip"></div>
 
-    <div class="summary" id="summary">
+    <div id="all-done-wrap"></div>
+
+    <div class="summary">
       <div class="summary-item">
         <div class="summary-val" id="sum-done">0</div>
         <div class="summary-label">Done</div>
@@ -351,22 +620,97 @@
   </div>
 
   <script>
-    // ── Storage helpers ──────────────────────────────────────────────────────
-    const STORE_KEY = 'habit_tracker_v1';
+    // ── Suggestion data ──────────────────────────────────────────────────────
+    const SUGGESTIONS = [
+      {
+        name: 'Wellness',
+        color: '#34d399',
+        iconPath: 'M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2zm0 4v4l3 3',
+        habits: [
+          'Drink 8 glasses of water',
+          'Sleep 8 hours',
+          'Take daily vitamins',
+          'Eat 5 servings of vegetables',
+          'No alcohol',
+          'Floss teeth',
+          'Cold shower',
+          'Limit caffeine after 2pm',
+        ]
+      },
+      {
+        name: 'Fitness',
+        color: '#f97316',
+        iconPath: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z',
+        habits: [
+          'Exercise 30 min',
+          'Morning walk',
+          'Stretch for 10 min',
+          '100 push-ups',
+          'Practice yoga',
+          'Go for a run',
+          'Strength training',
+          'Take 10,000 steps',
+        ]
+      },
+      {
+        name: 'Mind',
+        color: '#a78bfa',
+        iconPath: 'M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18',
+        habits: [
+          'Meditate 10 min',
+          'Write in journal',
+          'Gratitude — 3 things',
+          'Deep breathing exercises',
+          'Read 20 pages',
+          'No screen 1hr before bed',
+          'Learn one new thing',
+          'Spend time in nature',
+        ]
+      },
+      {
+        name: 'Productivity',
+        color: '#f59e0b',
+        iconPath: 'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2m-6 9l2 2 4-4',
+        habits: [
+          'Plan the day every morning',
+          'Review your goals',
+          'No social media before noon',
+          '90-min deep focus block',
+          'Inbox zero',
+          'Weekly review',
+          'Write 500 words',
+          'Practice a skill 30 min',
+        ]
+      },
+      {
+        name: 'Social',
+        color: '#60a5fa',
+        iconPath: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm7 4a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+        habits: [
+          'Call a friend or family',
+          'Compliment someone',
+          'Random act of kindness',
+          'No phone at dinner',
+          'Send a handwritten note',
+          'Put the phone away 1hr',
+        ]
+      },
+    ];
+
+    // ── Storage ──────────────────────────────────────────────────────────────
+    const STORE_KEY = 'habit_tracker_v2';
 
     function load() {
       try { return JSON.parse(localStorage.getItem(STORE_KEY)) || { habits: [] }; }
       catch { return { habits: [] }; }
     }
 
-    function save(data) {
-      localStorage.setItem(STORE_KEY, JSON.stringify(data));
-    }
+    function save(d) { localStorage.setItem(STORE_KEY, JSON.stringify(d)); }
 
     // ── Date helpers ─────────────────────────────────────────────────────────
-    function dateKey(d) {
-      return d.toISOString().slice(0, 10); // 'YYYY-MM-DD'
-    }
+    const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+    function dateKey(d) { return d.toISOString().slice(0, 10); }
 
     function addDays(d, n) {
       const r = new Date(d);
@@ -374,11 +718,9 @@
       return r;
     }
 
-    // Compute current streak up to (and including) today for a habit
     function calcStreak(habit) {
-      const today = new Date();
       let streak = 0;
-      let d = new Date(today);
+      let d = new Date();
       while (true) {
         const k = dateKey(d);
         if (!habit.completions[k]) break;
@@ -393,22 +735,109 @@
       if (!keys.length) return 0;
       let best = 1, cur = 1;
       for (let i = 1; i < keys.length; i++) {
-        const prev = new Date(keys[i - 1]);
-        const curr = new Date(keys[i]);
-        const diff = (curr - prev) / 86400000;
+        const diff = (new Date(keys[i]) - new Date(keys[i-1])) / 86400000;
         if (diff === 1) { cur++; best = Math.max(best, cur); }
         else cur = 1;
       }
       return best;
     }
 
+    function streakClass(streak) {
+      if (streak >= 7) return 'streak-hot';
+      if (streak >= 4) return 'streak-warm';
+      if (streak >= 1) return 'streak-active';
+      return '';
+    }
+
+    function streakLabel(streak) {
+      if (streak >= 7) return `On fire ${streak}d`;
+      if (streak >= 4) return `Heating up ${streak}d`;
+      if (streak >= 1) return `Streak ${streak}d`;
+      return 'No streak';
+    }
+
     // ── State ────────────────────────────────────────────────────────────────
     let data = load();
     let selectedDate = new Date();
 
-    // ── Date strip ───────────────────────────────────────────────────────────
-    const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    // ── Audio ────────────────────────────────────────────────────────────────
+    let audioCtx = null;
 
+    function getAudioCtx() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    }
+
+    function playCompleteSound() {
+      try {
+        const ctx = getAudioCtx();
+        // Ascending major chord arpeggio: C5 → E5 → G5 → C6
+        const notes = [523.25, 659.25, 783.99, 1046.5];
+        notes.forEach((freq, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.type = 'sine';
+          osc.frequency.value = freq;
+          const t = ctx.currentTime + i * 0.1;
+          gain.gain.setValueAtTime(0, t);
+          gain.gain.linearRampToValueAtTime(0.22, t + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+          osc.start(t);
+          osc.stop(t + 0.5);
+        });
+      } catch(e) { /* audio blocked, ignore */ }
+    }
+
+    // ── Particles ────────────────────────────────────────────────────────────
+    function spawnParticles(card, streak) {
+      const rect = card.getBoundingClientRect();
+      const cx = rect.left + 36;
+      const cy = rect.top + rect.height / 2;
+      const layer = document.getElementById('particle-layer');
+
+      const palette = streak >= 7
+        ? ['#f97316','#fb923c','#fbbf24','#fcd34d','#ef4444']
+        : streak >= 4
+          ? ['#f59e0b','#fbbf24','#f97316','#fde68a']
+          : ['#6c63ff','#a78bfa','#34d399','#60efff','#818cf8'];
+
+      const count = 18;
+      for (let i = 0; i < count; i++) {
+        const p = document.createElement('div');
+        p.className = 'particle';
+        const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
+        const dist = 45 + Math.random() * 55;
+        const size = 5 + Math.random() * 6;
+        const color = palette[Math.floor(Math.random() * palette.length)];
+        const dx = Math.cos(angle) * dist;
+        const dy = Math.sin(angle) * dist;
+        const isSquare = Math.random() > 0.6;
+
+        Object.assign(p.style, {
+          left: cx + 'px',
+          top: cy + 'px',
+          width: size + 'px',
+          height: size + 'px',
+          background: color,
+          borderRadius: isSquare ? '2px' : '50%',
+          transform: 'translate(-50%,-50%)',
+          opacity: '1',
+          transition: `transform ${0.5 + Math.random()*0.2}s cubic-bezier(0.2,0.8,0.3,1), opacity ${0.5 + Math.random()*0.2}s ease`,
+        });
+        layer.appendChild(p);
+
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          p.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) rotate(${Math.random()*360}deg)`;
+          p.style.opacity = '0';
+        }));
+
+        setTimeout(() => p.remove(), 800);
+      }
+    }
+
+    // ── Date strip ───────────────────────────────────────────────────────────
     function renderDateStrip() {
       const strip = document.getElementById('date-strip');
       strip.innerHTML = '';
@@ -429,8 +858,73 @@
         strip.appendChild(el);
       }
 
-      // Scroll to end
       strip.scrollLeft = strip.scrollWidth;
+      updateTodayLabel();
+    }
+
+    // ── Today label ──────────────────────────────────────────────────────────
+    function updateTodayLabel() {
+      const selKey = dateKey(selectedDate);
+      const todayKey = dateKey(new Date());
+      document.getElementById('today-label').textContent =
+        selKey === todayKey
+          ? 'Today'
+          : selectedDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+    }
+
+    // ── All-done banner ──────────────────────────────────────────────────────
+    let bannerShownForKey = null;
+
+    function checkAllDone() {
+      const selKey = dateKey(selectedDate);
+      const total = data.habits.length;
+      if (!total) { clearBanner(); return; }
+      const done = data.habits.filter(h => h.completions[selKey]).length;
+      const wrap = document.getElementById('all-done-wrap');
+
+      if (done === total && bannerShownForKey !== selKey) {
+        bannerShownForKey = selKey;
+        wrap.innerHTML = `<div class="all-done-banner">All habits complete for today — outstanding work!</div>`;
+        // Also fire a big celebration
+        setTimeout(() => spawnCelebration(), 200);
+      } else if (done < total) {
+        clearBanner();
+      }
+    }
+
+    function clearBanner() {
+      document.getElementById('all-done-wrap').innerHTML = '';
+    }
+
+    function spawnCelebration() {
+      const layer = document.getElementById('particle-layer');
+      const palette = ['#6c63ff','#a78bfa','#34d399','#f59e0b','#f97316','#60a5fa','#fbbf24'];
+      for (let i = 0; i < 40; i++) {
+        setTimeout(() => {
+          const p = document.createElement('div');
+          p.className = 'particle';
+          const cx = Math.random() * window.innerWidth;
+          const size = 5 + Math.random() * 8;
+          const color = palette[Math.floor(Math.random() * palette.length)];
+          const dy = 80 + Math.random() * 200;
+          const dx = (Math.random() - 0.5) * 150;
+          Object.assign(p.style, {
+            left: cx + 'px', top: '-10px',
+            width: size + 'px', height: size + 'px',
+            background: color,
+            borderRadius: Math.random() > 0.5 ? '2px' : '50%',
+            transform: 'translate(-50%, 0)',
+            opacity: '1',
+            transition: `transform 1.2s cubic-bezier(0.1, 0.8, 0.5, 1), opacity 1.2s ease`,
+          });
+          layer.appendChild(p);
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            p.style.transform = `translate(calc(-50% + ${dx}px), ${dy}px) rotate(${Math.random()*540}deg)`;
+            p.style.opacity = '0';
+          }));
+          setTimeout(() => p.remove(), 1400);
+        }, i * 30);
+      }
     }
 
     // ── Habits list ──────────────────────────────────────────────────────────
@@ -442,12 +936,12 @@
       if (!data.habits.length) {
         list.innerHTML = `
           <div class="empty">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
               <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
               <rect x="9" y="3" width="6" height="4" rx="1"/>
               <path d="M9 12h6M9 16h4"/>
             </svg>
-            <p>No habits yet. Add one above!</p>
+            <p>No habits yet.<br>Add one above or browse habit ideas.</p>
           </div>`;
         updateSummary();
         return;
@@ -457,48 +951,72 @@
         const done = !!habit.completions[selKey];
         const streak = calcStreak(habit);
         const best = calcBestStreak(habit);
+        const sc = streakClass(streak);
+        const label = streakLabel(streak);
 
         const card = document.createElement('div');
-        card.className = 'habit-card' + (done ? ' done' : '');
+        card.className = ['habit-card', sc, done ? 'done' : ''].filter(Boolean).join(' ');
         card.innerHTML = `
-          <button class="check-btn" aria-label="Toggle habit">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <button class="check-btn" aria-label="Toggle">
+            <svg class="check-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="20 6 9 17 4 12"/>
             </svg>
           </button>
           <div class="habit-info">
             <div class="habit-name">${escHtml(habit.name)}</div>
             <div class="habit-meta">
-              <span class="streak-badge ${streak >= 7 ? 'hot' : ''}">
-                ${streak >= 7 ? 'Fire' : 'Streak'} ${streak}d
-              </span>
-              ${best > streak ? `<span>best ${best}d</span>` : ''}
+              <span class="streak-badge">${label}</span>
+              ${best > streak && best > 0 ? `<span>best ${best}d</span>` : ''}
             </div>
           </div>
-          <button class="delete-btn" aria-label="Delete habit" title="Delete">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+          <button class="delete-btn" aria-label="Delete">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6l-1 14H6L5 6"/>
+              <path d="M10 11v6M14 11v6M9 6V4h6v2"/>
             </svg>
           </button>`;
 
-        card.querySelector('.check-btn').addEventListener('click', () => toggleHabit(idx, selKey, card));
+        card.querySelector('.check-btn').addEventListener('click', () => toggleHabit(idx, selKey, card, streak));
         card.querySelector('.delete-btn').addEventListener('click', () => deleteHabit(idx));
         list.appendChild(card);
       });
 
       updateSummary();
+      checkAllDone();
     }
 
-    function toggleHabit(idx, dateKey, card) {
+    function toggleHabit(idx, key, card, streak) {
       const habit = data.habits[idx];
-      habit.completions[dateKey] = !habit.completions[dateKey];
+      const completing = !habit.completions[key];
+      habit.completions[key] = completing;
       save(data);
-      // Animate then re-render
-      card.classList.add('pop');
-      card.addEventListener('animationend', () => renderHabits(), { once: true });
-      // Immediate visual toggle before re-render
-      const done = habit.completions[dateKey];
-      card.classList.toggle('done', done);
+
+      if (completing) {
+        // Sound
+        playCompleteSound();
+
+        // Ripple
+        const ripple = document.createElement('div');
+        ripple.className = 'ripple';
+        card.appendChild(ripple);
+        setTimeout(() => ripple.remove(), 600);
+
+        // Particles
+        spawnParticles(card, streak);
+
+        // Card bounce
+        card.classList.add('completing');
+        card.addEventListener('animationend', () => {
+          card.classList.remove('completing');
+          renderHabits();
+        }, { once: true });
+
+        // Immediate visual feedback
+        card.classList.add('done');
+      } else {
+        renderHabits();
+      }
     }
 
     function deleteHabit(idx) {
@@ -519,38 +1037,98 @@
       document.getElementById('sum-best').textContent = best;
     }
 
-    // ── Add habit ────────────────────────────────────────────────────────────
+    // ── Add habit form ───────────────────────────────────────────────────────
     document.getElementById('add-form').addEventListener('submit', e => {
       e.preventDefault();
       const input = document.getElementById('habit-input');
       const name = input.value.trim();
       if (!name) return;
+      if (data.habits.find(h => h.name.toLowerCase() === name.toLowerCase())) {
+        input.select();
+        return;
+      }
       data.habits.push({ id: Date.now(), name, completions: {} });
       save(data);
       input.value = '';
       renderHabits();
     });
 
+    // ── Suggestions modal ────────────────────────────────────────────────────
+    function addedNames() {
+      return new Set(data.habits.map(h => h.name.toLowerCase()));
+    }
+
+    function buildModal() {
+      const body = document.getElementById('modal-body');
+      body.innerHTML = '';
+      const added = addedNames();
+
+      SUGGESTIONS.forEach(cat => {
+        const sec = document.createElement('div');
+        sec.className = 'modal-cat';
+
+        sec.innerHTML = `
+          <div class="modal-cat-header">
+            <div class="modal-cat-icon" style="background:${cat.color}22; border:1px solid ${cat.color}44;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="${cat.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="${cat.iconPath}"/>
+              </svg>
+            </div>
+            <span class="modal-cat-name" style="color:${cat.color}">${cat.name}</span>
+          </div>
+          <div class="chips" id="chips-${cat.name}"></div>`;
+
+        body.appendChild(sec);
+
+        const chipsEl = sec.querySelector('.chips');
+        cat.habits.forEach(name => {
+          const isAdded = added.has(name.toLowerCase());
+          const chip = document.createElement('div');
+          chip.className = 'chip' + (isAdded ? ' chip-added' : '');
+          chip.innerHTML = `
+            <svg class="chip-check" viewBox="0 0 24 24" fill="none" stroke="${cat.color}" stroke-width="3" stroke-linecap="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            ${escHtml(name)}`;
+
+          if (!isAdded) {
+            chip.addEventListener('click', () => {
+              data.habits.push({ id: Date.now(), name, completions: {} });
+              save(data);
+              chip.classList.add('chip-added');
+              chip.querySelector('.chip-check').style.display = 'block';
+              renderHabits();
+            });
+          }
+
+          chipsEl.appendChild(chip);
+        });
+      });
+    }
+
+    document.getElementById('browse-btn').addEventListener('click', () => {
+      buildModal();
+      document.getElementById('modal-overlay').classList.add('open');
+    });
+
+    document.getElementById('modal-close').addEventListener('click', () => {
+      document.getElementById('modal-overlay').classList.remove('open');
+    });
+
+    document.getElementById('modal-overlay').addEventListener('click', e => {
+      if (e.target === document.getElementById('modal-overlay')) {
+        document.getElementById('modal-overlay').classList.remove('open');
+      }
+    });
+
     // ── Utils ────────────────────────────────────────────────────────────────
     function escHtml(str) {
-      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
     }
-
-    // ── Today label ──────────────────────────────────────────────────────────
-    function updateTodayLabel() {
-      const selKey = dateKey(selectedDate);
-      const todayKey = dateKey(new Date());
-      const label = selKey === todayKey ? 'Today' :
-        selectedDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
-      document.getElementById('today-label').textContent = label;
-    }
-
-    // Watch selectedDate changes
-    const origRenderDate = renderDateStrip;
-    renderDateStrip = function () {
-      origRenderDate();
-      updateTodayLabel();
-    };
 
     // ── Init ─────────────────────────────────────────────────────────────────
     renderDateStrip();
