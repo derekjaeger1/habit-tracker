@@ -1,0 +1,16 @@
+{
+  "name": "email-dashboard",
+  "version": "1.0.0",
+  "description": "Unified local dashboard for four Gmail accounts with priority sorting",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "googleapis": "^144.0.0"
+  }
+}
