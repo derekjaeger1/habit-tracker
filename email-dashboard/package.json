@@ -11,6 +11,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.74.0",
     "googleapis": "^144.0.0"
   }
 }
