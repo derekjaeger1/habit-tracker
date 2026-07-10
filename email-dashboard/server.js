@@ -196,6 +196,10 @@ function saveTriageCache(cache) {
   } catch { /* non-fatal */ }
 }
 
+// Bump this whenever TRIAGE_SYSTEM changes: cached verdicts from older rule
+// versions are ignored, so every email gets re-judged once under the new rules.
+const PROMPT_VERSION = 2;
+
 const TRIAGE_SYSTEM = `You triage email for Derek Jaeger. His accounts:
 - personal: djaeger15@gmail.com (personal life)
 - lastcrumb: derek@lastcrumb.com (his business Last Crumb)
@@ -206,6 +210,8 @@ Classify each email by how much Derek needs to see it:
 - "high": needs his attention. Real people writing to him personally; customers, partners, vendors, or employees of his businesses; anything about money owed/received, legal, taxes, security alerts, account problems, deadlines, or time-sensitive personal matters.
 - "normal": legitimate but routine. Receipts, order/shipping confirmations, statements, calendar notices, service notifications he'd skim later.
 - "low": marketing, promotions, sales, newsletters, digests, social notifications, product announcements, spam-adjacent noise. When a message is transparently trying to sell something, it is "low" no matter how urgent its subject line sounds.
+
+Important: Derek is the owner, so he is often CC'd on threads he isn't the direct addressee of. Any conversation between real people about his businesses — introductions, scheduling calls, negotiations, hiring, partner/vendor/customer coordination — is "high" even when the greeting names someone else. Reply threads ("Re:") between humans conducting business are "high" unless clearly trivial.
 
 Judge from the sender, subject, and snippet. Be skeptical of manufactured urgency ("ends tonight!", "last chance"). Give a short "why" (under 12 words).`;
 
@@ -269,7 +275,7 @@ async function runAITriage(emails, ai, payload) {
   const pending = [];
   for (const m of emails) {
     const cached = cache[m.id];
-    if (cached) {
+    if (cached && cached.v === PROMPT_VERSION) {
       m.tier = cached.tier;
       m.why = cached.why;
       m.ai = true;
@@ -290,7 +296,7 @@ async function runAITriage(emails, ai, payload) {
         m.tier = r.tier;
         m.why = r.why;
         m.ai = true;
-        cache[m.id] = { tier: r.tier, why: r.why };
+        cache[m.id] = { tier: r.tier, why: r.why, v: PROMPT_VERSION };
       }
     }
     saveTriageCache(cache);
