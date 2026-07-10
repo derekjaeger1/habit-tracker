@@ -37,7 +37,8 @@ const ACCOUNTS = [
   { alias: "lunalulu",  email: "derek@lunaluluenterprises.com", creds: "credentials-lunalulu.json",  color: "#a05ad0" },
 ];
 
-const MESSAGES_PER_ACCOUNT = 30;
+const DEFAULT_DEPTH = 30;   // emails per account; UI can request up to MAX_DEPTH
+const MAX_DEPTH = 250;
 const CACHE_TTL_MS = 60 * 1000;
 
 // ---------------------------------------------------------------- Gmail ----
@@ -114,14 +115,21 @@ function heuristicTier(msg) {
   return "high"; // non-bulk, non-category mail is almost always a real person
 }
 
-async function fetchAccount(account) {
+async function fetchAccount(account, depth) {
   const gmail = getClient(account);
-  const list = await gmail.users.messages.list({
-    userId: "me",
-    q: "in:inbox",
-    maxResults: MESSAGES_PER_ACCOUNT,
-  });
-  const ids = (list.data.messages || []).map((m) => m.id);
+  const ids = [];
+  let pageToken;
+  while (ids.length < depth) {
+    const list = await gmail.users.messages.list({
+      userId: "me",
+      q: "in:inbox",
+      maxResults: Math.min(100, depth - ids.length),
+      pageToken,
+    });
+    ids.push(...(list.data.messages || []).map((m) => m.id));
+    pageToken = list.data.nextPageToken;
+    if (!pageToken) break;
+  }
   return mapLimit(ids, 8, async (id) => {
     const res = await gmail.users.messages.get({
       userId: "me",
@@ -301,20 +309,21 @@ async function runAITriage(emails, ai, payload) {
 
 // ------------------------------------------------------------------ fetch ----
 
-let cache = { at: 0, payload: null, pending: null };
+let cache = { at: 0, payload: null, pending: null, depth: 0 };
 
-async function getAllEmails(fresh) {
+async function getAllEmails(fresh, depth) {
   const now = Date.now();
-  if (!fresh && cache.payload && now - cache.at < CACHE_TTL_MS) return cache.payload;
-  if (cache.pending) return cache.pending;
+  if (!fresh && cache.payload && cache.depth === depth && now - cache.at < CACHE_TTL_MS) return cache.payload;
+  if (cache.pending && cache.depth === depth) return cache.pending;
 
+  cache.depth = depth;
   cache.pending = (async () => {
     const accounts = [];
     const emails = [];
     await Promise.all(
       ACCOUNTS.map(async (acc) => {
         try {
-          const msgs = await fetchAccount(acc);
+          const msgs = await fetchAccount(acc, depth);
           accounts.push({ alias: acc.alias, email: acc.email, color: acc.color, ok: true, count: msgs.length });
           emails.push(...msgs);
         } catch (err) {
@@ -331,7 +340,7 @@ async function getAllEmails(fresh) {
     if (ai.key && emails.length) await runAITriage(emails, ai, payload);
 
     emails.sort((a, b) => b.dateMs - a.dateMs);
-    cache = { at: Date.now(), payload, pending: null };
+    cache = { at: Date.now(), payload, pending: null, depth };
     return payload;
   })();
 
@@ -375,6 +384,10 @@ const PAGE = `<!doctype html>
     border-radius: 8px; padding: 7px 14px; font-size: 14px; cursor: pointer;
   }
   button.refresh:hover { border-color: var(--accent); }
+  select.depth {
+    border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    border-radius: 8px; padding: 6px 8px; font-size: 13.5px; cursor: pointer;
+  }
   .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 20px; }
   .chip {
     display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px;
@@ -426,13 +439,18 @@ const PAGE = `<!doctype html>
     <span class="aibadge" id="aibadge"></span>
     <span class="meta" id="meta"></span>
     <button class="refresh" id="refresh">↻ Refresh</button>
+    <select class="depth" id="depth" title="How far back to load, per inbox">
+      <option value="30">Recent (30/inbox)</option>
+      <option value="100">Deeper (100/inbox)</option>
+      <option value="250">Way back (250/inbox)</option>
+    </select>
   </header>
   <div class="chips" id="chips"></div>
   <div id="banners"></div>
   <div id="content"><div class="loading">Loading your four inboxes…</div></div>
 </div>
 <script>
-const state = { data: null, hidden: new Set(), showLow: false };
+const state = { data: null, hidden: new Set(), showLow: false, depth: 30 };
 
 function timeAgo(ms) {
   if (!ms) return "";
@@ -553,15 +571,28 @@ function render() {
   }
 }
 
+let loading = false;
 async function load(fresh) {
+  if (loading) return;
+  loading = true;
   const content = document.getElementById("content");
+  const meta = document.getElementById("meta");
   if (!state.data) content.replaceChildren(el("div", "loading", "Loading your four inboxes…"));
-  const res = await fetch("/api/emails" + (fresh ? "?fresh=1" : ""));
-  state.data = await res.json();
-  render();
+  else meta.textContent = "loading…";
+  try {
+    const res = await fetch("/api/emails?n=" + state.depth + (fresh ? "&fresh=1" : ""));
+    state.data = await res.json();
+    render();
+  } finally {
+    loading = false;
+  }
 }
 
 document.getElementById("refresh").onclick = () => load(true);
+document.getElementById("depth").onchange = (e) => {
+  state.depth = Number(e.target.value);
+  load(false);
+};
 setInterval(() => load(true), 5 * 60 * 1000);
 load(false);
 </script>
@@ -577,7 +608,8 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(PAGE);
     } else if (url.pathname === "/api/emails") {
-      const data = await getAllEmails(url.searchParams.get("fresh") === "1");
+      const depth = Math.max(10, Math.min(MAX_DEPTH, parseInt(url.searchParams.get("n"), 10) || DEFAULT_DEPTH));
+      const data = await getAllEmails(url.searchParams.get("fresh") === "1", depth);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(data));
     } else {
