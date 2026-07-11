@@ -22,6 +22,7 @@ const os = require("os");
 const path = require("path");
 const { google } = require("googleapis");
 
+const VERSION = "v4";
 const PORT = 3777;
 const CONFIG_DIR = path.join(os.homedir(), ".gmail-mcp");
 const OAUTH_KEYS_PATH = path.join(CONFIG_DIR, "gcp-oauth.keys.json");
@@ -478,6 +479,7 @@ const PAGE = `<!doctype html>
 <div class="app">
   <header class="top">
     <span class="brand">Inbox</span>
+    <span class="meta" id="ver"></span>
     <span class="aibadge" id="aibadge"></span>
     <span class="spacer"></span>
     <span class="meta" id="meta"></span>
@@ -496,6 +498,7 @@ const PAGE = `<!doctype html>
 <script>
 const state = { data: null, hidden: new Set(), showLow: false, days: 7 };
 
+document.getElementById("ver").textContent = "${VERSION}";
 if (localStorage.getItem("theme") === "light") document.documentElement.dataset.theme = "light";
 document.getElementById("theme").onclick = () => {
   const root = document.documentElement;
@@ -714,7 +717,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, "127.0.0.1", () => {
   const ai = getAIConfig();
   console.log("");
-  console.log("  📬 Email dashboard running!");
+  console.log(`  📬 Email dashboard running! (${VERSION})`);
   console.log(`  Open:  http://localhost:${PORT}`);
   console.log("");
   console.log(ai.key
