@@ -1,17 +1,15 @@
-// Unified Gmail Dashboard — v2 with real triage
+// Unified Gmail Dashboard — v3
 //
 // Reads all four Gmail accounts using the tokens already stored in ~/.gmail-mcp
-// (created during MCP setup) and serves a single local web page at
-// http://localhost:3777 with mail sorted into Priority / Everything else /
-// Promos & newsletters.
+// and serves a single local page at http://localhost:3777 with mail sorted into
+// Priority / Everything else / Promos & newsletters.
 //
-// Sorting has two layers:
+// Sorting layers:
 //   1. Bulk-mail detection (always on, free): mass mail carries fingerprint
-//      headers (List-Unsubscribe, Precedence: bulk) that no human sender has.
-//   2. Claude AI triage (optional): if an API key is saved at
-//      ~/.gmail-mcp/anthropic.key, Claude reads each email's sender/subject/
-//      snippet and judges whether Derek actually needs to see it. Verdicts are
-//      cached per message, so only new mail costs anything.
+//      headers (List-Unsubscribe, Precedence: bulk) no human sender has.
+//   2. Claude AI triage (optional): if a key is saved at
+//      ~/.gmail-mcp/anthropic.key, Claude judges each email. Verdicts are
+//      cached per message + rule version, so only new mail costs anything.
 //
 // Read-only: this app never sends, deletes, or modifies email.
 
@@ -29,12 +27,11 @@ const AI_MODEL_PATH = path.join(CONFIG_DIR, "anthropic.model"); // optional over
 const TRIAGE_CACHE_PATH = path.join(CONFIG_DIR, "triage-cache.json");
 const DEFAULT_AI_MODEL = "claude-opus-4-8";
 
-// The four accounts. The creds file must exist in ~/.gmail-mcp.
 const ACCOUNTS = [
-  { alias: "personal",  email: "djaeger15@gmail.com",           creds: "credentials-personal.json",  color: "#4f6ef7" },
-  { alias: "lastcrumb", email: "derek@lastcrumb.com",           creds: "credentials-lastcrumb.json", color: "#e2725b" },
-  { alias: "plushpay",  email: "derek@plushpay.com",            creds: "credentials-plushpay.json",  color: "#0aa47c" },
-  { alias: "lunalulu",  email: "derek@lunaluluenterprises.com", creds: "credentials-lunalulu.json",  color: "#a05ad0" },
+  { alias: "personal",  email: "djaeger15@gmail.com",           creds: "credentials-personal.json",  color: "#7c9cf5" },
+  { alias: "lastcrumb", email: "derek@lastcrumb.com",           creds: "credentials-lastcrumb.json", color: "#f0987a" },
+  { alias: "plushpay",  email: "derek@plushpay.com",            creds: "credentials-plushpay.json",  color: "#5fd0a5" },
+  { alias: "lunalulu",  email: "derek@lunaluluenterprises.com", creds: "credentials-lunalulu.json",  color: "#c493ef" },
 ];
 
 const DEFAULT_DEPTH = 30;   // emails per account; UI can request up to MAX_DEPTH
@@ -89,8 +86,7 @@ function parseFrom(fromHeader) {
   return { name: fromHeader.trim(), address: fromHeader.trim() };
 }
 
-// Bulk-mail fingerprints: mass mail (promos, newsletters, notifications)
-// carries headers real human senders never set.
+// Bulk-mail fingerprints: mass mail carries headers real humans never set.
 function isBulk(headers, labelIds, from) {
   if (headers["list-unsubscribe"]) return true;
   const precedence = (headers["precedence"] || "").toLowerCase();
@@ -104,9 +100,6 @@ function isBulk(headers, labelIds, from) {
 }
 
 // Heuristic tier, used when AI triage is off or hasn't judged a message yet.
-//   high   -> Priority (humans writing to Derek, starred mail)
-//   normal -> Everything else (receipts, updates, legit non-urgent)
-//   low    -> Promos & newsletters
 function heuristicTier(msg) {
   const l = new Set(msg.labelIds || []);
   if (msg.starred) return "high";
@@ -198,22 +191,34 @@ function saveTriageCache(cache) {
 
 // Bump this whenever TRIAGE_SYSTEM changes: cached verdicts from older rule
 // versions are ignored, so every email gets re-judged once under the new rules.
-const PROMPT_VERSION = 2;
+const PROMPT_VERSION = 3;
 
-const TRIAGE_SYSTEM = `You triage email for Derek Jaeger. His accounts:
+const TRIAGE_SYSTEM = `You triage email for Derek Jaeger, the way Superhuman's "Important" split would — near-perfect separation of what deserves his attention from noise. His accounts:
 - personal: djaeger15@gmail.com (personal life)
 - lastcrumb: derek@lastcrumb.com (his business Last Crumb)
 - plushpay: derek@plushpay.com (his business Plush Pay, a payments company)
 - lunalulu: derek@lunaluluenterprises.com (his business Luna Lulu Enterprises)
 
-Classify each email by how much Derek needs to see it:
-- "high": needs his attention. Real people writing to him personally; customers, partners, vendors, or employees of his businesses; anything about money owed/received, legal, taxes, security alerts, account problems, deadlines, or time-sensitive personal matters.
-- "normal": legitimate but routine. Receipts, order/shipping confirmations, statements, calendar notices, service notifications he'd skim later.
-- "low": marketing, promotions, sales, newsletters, digests, social notifications, product announcements, spam-adjacent noise. When a message is transparently trying to sell something, it is "low" no matter how urgent its subject line sounds.
+Classify each email:
 
-Important: Derek is the owner, so he is often CC'd on threads he isn't the direct addressee of. Any conversation between real people about his businesses — introductions, scheduling calls, negotiations, hiring, partner/vendor/customer coordination — is "high" even when the greeting names someone else. Reply threads ("Re:") between humans conducting business are "high" unless clearly trivial.
+"high" — Derek needs to see it:
+- Real people writing to or about him, his family, or his businesses: customers, partners, vendors, employees, friends.
+- He is the owner and often CC'd on threads addressed to teammates. Conversations between real people about his businesses — introductions, negotiations, hiring, vendor/customer coordination — are high even when the greeting names someone else. Reply threads ("Re:") between humans conducting business are high unless clearly trivial.
+- ANYTHING involving appointments or scheduling: reservations, bookings, calendar invitations and event changes, meeting/call confirmations and reminders, deliveries needing action.
+- Action required from him: e-signature requests, document approvals, confirmations he must click, verification requests.
+- Money, legal, taxes, security alerts, fraud warnings, account problems, deadlines.
 
-Judge from the sender, subject, and snippet. Be skeptical of manufactured urgency ("ends tonight!", "last chance"). Give a short "why" (under 12 words).`;
+"normal" — legitimate, no action needed:
+- Receipts, payment confirmations, statements, order/shipping notices.
+- Routine service notifications, reports, and digests from tools his businesses use (sales summaries, usage reports).
+- Package delivery notices that need no action.
+
+"low" — noise:
+- Marketing, promotions, sales, newsletters, product announcements, social notifications.
+- Unsolicited pitches from strangers: agencies, recruiters, growth/marketing/PR services, "we helped X achieve Y" cold outreach, LinkedIn-style networking from people Derek has no existing relationship with. These are low even when personalized with his name or his company's name and even when they reply-bump their own thread ("still curious...", "following up..."). A stranger selling services is low; a customer or partner is high — judge which one this is.
+- Manufactured urgency ("ends tonight!", "last chance") is a promo tell, not a priority signal.
+
+Judge from the sender, subject, and snippet. Give a short "why" (under 12 words).`;
 
 const TRIAGE_SCHEMA = {
   type: "object",
@@ -270,8 +275,6 @@ async function runAITriage(emails, ai, payload) {
   const anthropic = new Anthropic({ apiKey: ai.key });
   const cache = loadTriageCache();
 
-  // Apply cached verdicts; collect messages Claude hasn't judged yet.
-  // Obvious bulk promos/social skip AI entirely — they're "low", no tokens needed.
   const pending = [];
   for (const m of emails) {
     const cached = cache[m.id];
@@ -280,7 +283,7 @@ async function runAITriage(emails, ai, payload) {
       m.why = cached.why;
       m.ai = true;
     } else if (m.bulk && (m.labelIds.includes("CATEGORY_PROMOTIONS") || m.labelIds.includes("CATEGORY_SOCIAL"))) {
-      // keep heuristic "low"
+      // obvious promo/social bulk: keep heuristic "low", no tokens needed
     } else {
       pending.push(m);
     }
@@ -309,7 +312,6 @@ async function runAITriage(emails, ai, payload) {
       : `AI triage failed${status}: ${String(err?.message || err).slice(0, 200)}`;
   }
 
-  // Starred always wins, whatever the AI thinks.
   for (const m of emails) if (m.starred) m.tier = "high";
 }
 
@@ -364,96 +366,119 @@ const PAGE = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>All Inboxes</title>
+<title>Inbox</title>
 <style>
   :root {
-    --bg: #f6f7f9; --card: #ffffff; --ink: #1a1d23; --muted: #6b7280;
-    --line: #e5e7eb; --accent: #4f6ef7;
+    --bg: #131419; --panel: #17181f; --hover: #1e2029; --ink: #eceef4;
+    --dim: #b9bdc9; --muted: #7e8494; --line: rgba(255,255,255,0.07);
+    --accent: #8f93ff; --gold: #e8b64c; --warn-bg: #2b2214; --warn-line: #6b5426; --warn-ink: #e8c98b;
   }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #101216; --card: #191c22; --ink: #e8eaee; --muted: #8b93a1; --line: #262a33; }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f7f6f3; --panel: #ffffff; --hover: #edecea; --ink: #1c1d22;
+      --dim: #45474f; --muted: #82868f; --line: rgba(0,0,0,0.08);
+      --accent: #5a5fd6; --warn-bg: #fff4e5; --warn-line: #f0c188; --warn-ink: #7a4d09;
+    }
   }
   * { box-sizing: border-box; }
+  html { background: var(--bg); }
   body {
     margin: 0; background: var(--bg); color: var(--ink);
-    font: 15px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif;
+    font: 14.5px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 880px; margin: 0 auto; padding: 24px 16px 80px; }
-  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
-  h1 { font-size: 22px; margin: 0; letter-spacing: -0.02em; }
-  .meta { color: var(--muted); font-size: 13px; }
-  .aibadge { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line);
-    color: var(--muted); }
-  .aibadge.on { color: #0aa47c; border-color: #0aa47c55; }
-  button.refresh {
-    margin-left: auto; border: 1px solid var(--line); background: var(--card); color: var(--ink);
-    border-radius: 8px; padding: 7px 14px; font-size: 14px; cursor: pointer;
+  .app { max-width: 820px; margin: 0 auto; padding: 30px 20px 100px; }
+
+  header.top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 26px; }
+  .brand { font-size: 21px; font-weight: 700; letter-spacing: -0.02em; }
+  .aibadge { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; }
+  .aibadge.on { color: #5fd0a5; border-color: rgba(95,208,165,0.35); }
+  .spacer { flex: 1; }
+  .meta { color: var(--muted); font-size: 12.5px; }
+  select.depth, button.refresh {
+    border: 1px solid var(--line); background: var(--panel); color: var(--dim);
+    border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer;
   }
-  button.refresh:hover { border-color: var(--accent); }
-  select.depth {
-    border: 1px solid var(--line); background: var(--card); color: var(--ink);
-    border-radius: 8px; padding: 6px 8px; font-size: 13.5px; cursor: pointer;
-  }
-  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 20px; }
+  button.refresh:hover, select.depth:hover { color: var(--ink); border-color: var(--accent); }
+
+  .accounts { display: flex; gap: 6px; flex-wrap: wrap; }
   .chip {
-    display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px;
-    border: 1px solid var(--line); background: var(--card); cursor: pointer; font-size: 13px; user-select: none;
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--line); cursor: pointer; font-size: 12.5px; color: var(--dim); user-select: none;
   }
-  .chip .dot { width: 9px; height: 9px; border-radius: 50%; }
-  .chip.off { opacity: 0.38; }
-  .chip .err { color: #d33; font-weight: 600; }
-  h2.section {
-    font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted);
-    margin: 26px 0 8px; display: flex; align-items: center; gap: 8px; cursor: default;
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .chip.off { opacity: 0.35; }
+  .chip .err { color: #e07070; font-weight: 700; }
+
+  .banner { background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-ink);
+    border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; }
+
+  .sec { display: flex; align-items: baseline; gap: 10px; margin: 36px 2px 4px; }
+  .sec:first-child { margin-top: 8px; }
+  .sec .name { font-size: 15.5px; font-weight: 650; letter-spacing: -0.01em; }
+  .sec .count { font-size: 12px; color: var(--muted); }
+  .sec::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .sec.toggle { cursor: pointer; }
+  .sec.toggle .name { color: var(--muted); font-weight: 600; }
+  .sec.toggle:hover .name { color: var(--dim); }
+
+  .day { font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted); margin: 20px 14px 4px; }
+
+  .row {
+    display: grid; grid-template-columns: 46px 1fr; gap: 0 14px;
+    padding: 11px 14px; border-radius: 12px; cursor: pointer;
   }
-  h2.section.toggle { cursor: pointer; }
-  .rows { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-  .row { display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
-  .row:last-child { border-bottom: none; }
-  .row:hover { background: rgba(127,127,127,0.06); }
-  .row .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; }
-  .row .main { flex: 1; min-width: 0; }
-  .row .top { display: flex; gap: 8px; align-items: baseline; }
-  .row .sender { font-weight: 480; }
-  .row.unread .sender, .row.unread .subject { font-weight: 700; }
-  .row .acct { font-size: 11px; color: var(--muted); }
-  .row .time { margin-left: auto; flex: none; font-size: 12.5px; color: var(--muted); }
-  .row .subject { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .row .snippet { display: block; color: var(--muted); font-size: 13.5px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .row .star { color: #f2b01e; }
-  .row .why { font-size: 12px; color: var(--muted); font-style: italic; margin-top: 4px; }
-  .row .why .ai { color: #0aa47c; font-style: normal; }
-  .row .expand { display: none; margin-top: 8px; }
+  .row:hover { background: var(--hover); }
+  .avatar {
+    width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; font-size: 13px; font-weight: 650; margin-top: 2px;
+  }
+  .row.unread .avatar { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--avc); }
+  .main { min-width: 0; }
+  .l1 { display: flex; align-items: baseline; gap: 8px; }
+  .sender { font-weight: 600; color: var(--dim); white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; max-width: 60%; }
+  .row.unread .sender { color: var(--ink); }
+  .star { color: var(--gold); font-size: 13px; }
+  .acct { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .time { margin-left: auto; flex: none; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .l2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+  .subject { color: var(--dim); font-weight: 500; }
+  .row.unread .subject { color: var(--ink); font-weight: 650; }
+  .snip { color: var(--muted); font-weight: 400; }
+  .row.open .l2 { white-space: normal; }
+  .expand { display: none; margin-top: 10px; }
   .row.open .expand { display: block; }
-  .row.open .subject, .row.open .snippet { white-space: normal; }
-  .expand a {
-    display: inline-block; margin-top: 6px; color: var(--accent); text-decoration: none;
-    font-size: 13.5px; font-weight: 600;
-  }
-  .empty { padding: 22px 16px; color: var(--muted); }
-  .banner { background: #fff4e5; border: 1px solid #f0c188; color: #7a4d09;
-    border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-size: 13.5px; }
-  @media (prefers-color-scheme: dark) { .banner { background: #2b2214; border-color: #6b5426; color: #e8c98b; } }
-  .loading { color: var(--muted); padding: 40px 0; text-align: center; }
+  .why { display: inline-block; font-size: 12px; color: var(--muted); font-style: italic;
+    border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px; margin-bottom: 8px; }
+  .why .ai { color: #5fd0a5; font-style: normal; font-weight: 600; }
+  .addr { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .gmail { display: inline-block; color: var(--accent); text-decoration: none;
+    font-size: 13px; font-weight: 600; border: 1px solid var(--line); border-radius: 8px; padding: 6px 14px; }
+  .gmail:hover { border-color: var(--accent); }
+  .empty { padding: 20px 14px; color: var(--muted); font-size: 13.5px; }
+  .loading { color: var(--muted); padding: 60px 0; text-align: center; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>📬 All Inboxes</h1>
+<div class="app">
+  <header class="top">
+    <span class="brand">Inbox</span>
     <span class="aibadge" id="aibadge"></span>
+    <span class="spacer"></span>
     <span class="meta" id="meta"></span>
-    <button class="refresh" id="refresh">↻ Refresh</button>
     <select class="depth" id="depth" title="How far back to load, per inbox">
-      <option value="30">Recent (30/inbox)</option>
-      <option value="100">Deeper (100/inbox)</option>
-      <option value="250">Way back (250/inbox)</option>
+      <option value="30">Recent</option>
+      <option value="100">Deeper</option>
+      <option value="250">Way back</option>
     </select>
+    <button class="refresh" id="refresh" title="Refresh">↻</button>
   </header>
-  <div class="chips" id="chips"></div>
+  <div class="accounts" id="chips" style="margin-bottom:18px"></div>
   <div id="banners"></div>
-  <div id="content"><div class="loading">Loading your four inboxes…</div></div>
+  <main id="content"><div class="loading">Loading your four inboxes…</div></main>
 </div>
 <script>
 const state = { data: null, hidden: new Set(), showLow: false, depth: 30 };
@@ -463,9 +488,25 @@ function timeAgo(ms) {
   const d = new Date(ms), diff = Date.now() - ms;
   if (diff < 60e3) return "now";
   if (diff < 3600e3) return Math.floor(diff / 60e3) + "m";
-  if (diff < 86400e3) return Math.floor(diff / 3600e3) + "h";
+  if (diff < 86400e3) return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   if (diff < 7 * 86400e3) return d.toLocaleDateString(undefined, { weekday: "short" });
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function dayLabel(ms) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (ms >= today) return "Today";
+  if (ms >= today - 86400e3) return "Yesterday";
+  if (ms >= today - 6 * 86400e3) return "This week";
+  if (ms >= today - 13 * 86400e3) return "Last week";
+  return "Older";
+}
+
+function initials(name) {
+  const words = name.replace(/[^\\p{L}\\p{N} ]/gu, " ").trim().split(/\\s+/).filter(Boolean);
+  if (!words.length) return "?";
+  return (words[0][0] + (words[1] ? words[1][0] : "")).toUpperCase();
 }
 
 function el(tag, cls, text) {
@@ -482,8 +523,7 @@ function renderChips() {
     const c = el("span", "chip" + (state.hidden.has(acc.alias) ? " off" : ""));
     const dot = el("span", "dot"); dot.style.background = acc.color;
     c.append(dot, el("span", null, acc.alias));
-    if (!acc.ok) c.append(el("span", "err", "⚠"));
-    else c.append(el("span", "acct", String(acc.count)));
+    if (!acc.ok) c.append(el("span", "err", "!"));
     c.onclick = () => {
       state.hidden.has(acc.alias) ? state.hidden.delete(acc.alias) : state.hidden.add(acc.alias);
       render();
@@ -507,38 +547,49 @@ function renderBanners() {
 
 function buildRow(m) {
   const row = el("div", "row" + (m.unread ? " unread" : ""));
-  const dot = el("span", "dot"); dot.style.background = m.color; dot.title = m.account;
+  row.style.setProperty("--avc", m.color);
+  const av = el("div", "avatar", initials(m.from.name));
+  av.style.background = m.color + "26";
+  av.style.color = m.color;
+  av.title = m.account;
   const main = el("div", "main");
-  const top = el("div", "top");
-  top.append(el("span", "sender", m.from.name));
-  if (m.starred) top.append(el("span", "star", "★"));
-  top.append(el("span", "acct", m.account));
-  top.append(el("span", "time", timeAgo(m.dateMs)));
-  const subject = el("span", "subject", m.subject);
-  const snippet = el("span", "snippet", m.snippet);
+  const l1 = el("div", "l1");
+  l1.append(el("span", "sender", m.from.name));
+  if (m.starred) l1.append(el("span", "star", "★"));
+  l1.append(el("span", "acct", m.account));
+  l1.append(el("span", "time", timeAgo(m.dateMs)));
+  const l2 = el("div", "l2");
+  l2.append(el("span", "subject", m.subject));
+  if (m.snippet) l2.append(el("span", "snip", "  —  " + m.snippet));
   const expand = el("div", "expand");
   if (m.why) {
     const why = el("div", "why");
-    if (m.ai) why.append(el("span", "ai", "AI: "));
+    if (m.ai) why.append(el("span", "ai", "AI  ·  "));
     why.append(document.createTextNode(m.why));
     expand.append(why);
   }
-  const link = el("a", null, "Open in Gmail →");
+  expand.append(el("div", "addr", m.from.address + "  ·  to " + m.accountEmail));
+  const link = el("a", "gmail", "Open in Gmail ↗");
   link.href = "https://mail.google.com/mail/?authuser=" + encodeURIComponent(m.accountEmail) + "#all/" + m.id;
   link.target = "_blank";
   link.onclick = (e) => e.stopPropagation();
-  expand.append(el("div", "acct", m.from.address + " · to " + m.accountEmail), link);
-  main.append(top, subject, snippet, expand);
-  row.append(dot, main);
+  expand.append(link);
+  main.append(l1, l2, expand);
+  row.append(av, main);
   row.onclick = () => row.classList.toggle("open");
   return row;
 }
 
-function section(title, list, emptyText) {
-  const h = el("h2", "section", title);
-  const box = el("div", "rows");
-  list.length ? list.forEach((m) => box.append(buildRow(m))) : box.append(el("div", "empty", emptyText));
-  return [h, box];
+function renderList(container, list) {
+  let lastDay = null;
+  for (const m of list) {
+    const label = dayLabel(m.dateMs);
+    if (label !== lastDay) {
+      container.append(el("div", "day", label));
+      lastDay = label;
+    }
+    container.append(buildRow(m));
+  }
 }
 
 function render() {
@@ -551,29 +602,35 @@ function render() {
   const normal = visible.filter((m) => m.tier === "normal");
   const low = visible.filter((m) => m.tier === "low");
 
-  content.append(...section("🔥 Priority (" + high.length + ")", high, "Nothing needs you right now. 🎉"));
-  content.append(...section("📥 Everything else (" + normal.length + ")", normal, "Empty."));
+  const sec1 = el("div", "sec");
+  sec1.append(el("span", "name", "Priority"), el("span", "count", String(high.length)));
+  content.append(sec1);
+  high.length ? renderList(content, high) : content.append(el("div", "empty", "Nothing needs you right now."));
 
-  const lowHeader = el("h2", "section toggle",
-    "🗞 Promos & newsletters (" + low.length + ") " + (state.showLow ? "▾ click to hide" : "▸ click to show"));
-  lowHeader.onclick = () => { state.showLow = !state.showLow; render(); };
-  content.append(lowHeader);
+  const sec2 = el("div", "sec");
+  sec2.append(el("span", "name", "Everything else"), el("span", "count", String(normal.length)));
+  content.append(sec2);
+  normal.length ? renderList(content, normal) : content.append(el("div", "empty", "Empty."));
+
+  const sec3 = el("div", "sec toggle");
+  sec3.append(el("span", "name", (state.showLow ? "▾" : "▸") + "  Promos & newsletters"), el("span", "count", String(low.length)));
+  sec3.onclick = () => { state.showLow = !state.showLow; render(); };
+  content.append(sec3);
   if (state.showLow) {
-    const box = el("div", "rows");
-    low.length ? low.forEach((m) => box.append(buildRow(m))) : box.append(el("div", "empty", "Empty."));
-    content.append(box);
+    low.length ? renderList(content, low) : content.append(el("div", "empty", "Empty."));
   }
 
   document.getElementById("meta").textContent =
-    "updated " + new Date(state.data.fetchedAt).toLocaleTimeString();
+    "updated " + new Date(state.data.fetchedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   const badge = document.getElementById("aibadge");
   if (state.data.aiEnabled) {
-    badge.textContent = "🤖 AI triage: on";
+    badge.textContent = "AI triage on";
     badge.className = "aibadge on";
     badge.title = "Model: " + state.data.aiModel;
   } else {
-    badge.textContent = "AI triage: off (header-based sorting)";
+    badge.textContent = "AI off";
     badge.className = "aibadge";
+    badge.title = "Header-based sorting — see README to enable AI triage";
   }
 }
 

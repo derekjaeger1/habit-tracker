@@ -66,6 +66,28 @@ Delete that file to go back to the default.
 - **What "Priority" means:** edit `TRIAGE_SYSTEM` in `server.js` — it's
   plain-English instructions to the AI.
 
+## Run it invisibly at startup (no PowerShell window)
+
+`start-dashboard-hidden.vbs` launches the server with no window at all.
+
+1. Press **Win + R**, type `shell:startup`, press Enter — a folder opens.
+2. Right-click `start-dashboard-hidden.vbs` in the email-dashboard folder →
+   **Show more options → Create shortcut**, and move that shortcut into the
+   startup folder.
+
+From then on the dashboard starts silently every time you log in — just
+bookmark http://localhost:3777. To stop it manually: Task Manager → find
+**Node.js** → End task.
+
+## Accessing it from other devices
+
+The server deliberately binds to localhost only — it holds OAuth tokens for
+four mailboxes, so it must never be exposed to the public internet as-is.
+To reach it from a phone/laptop, use a private mesh VPN like Tailscale
+(free tier) and open `http://<pc-name>:3777` from any of your own devices —
+traffic stays encrypted and invitation-only. Hosting it on a public website
+would require adding real authentication first.
+
 ## Troubleshooting
 
 - Account chip shows ⚠ with a token/grant error → that account's login
