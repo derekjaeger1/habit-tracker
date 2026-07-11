@@ -322,6 +322,7 @@ async function runAITriage(emails, ai, payload) {
       }
       judged += batch.length;
       setProgress({ phase: "judging", done: judged, total: pending.length });
+      saveTriageCache(cache); // persist per batch so an interrupted run loses nothing
     });
     saveTriageCache(cache);
   } catch (err) {
