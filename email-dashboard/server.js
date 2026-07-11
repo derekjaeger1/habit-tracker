@@ -1,8 +1,11 @@
-// Unified Gmail Dashboard — v3
+// Unified Gmail Dashboard — v4
 //
 // Reads all four Gmail accounts using the tokens already stored in ~/.gmail-mcp
 // and serves a single local page at http://localhost:3777 with mail sorted into
 // Priority / Everything else / Promos & newsletters.
+//
+// Fetching is by TIME WINDOW (last 7/14/30 days of each inbox, complete), not
+// by message count — so no day can be silently missing from the view.
 //
 // Sorting layers:
 //   1. Bulk-mail detection (always on, free): mass mail carries fingerprint
@@ -34,9 +37,14 @@ const ACCOUNTS = [
   { alias: "lunalulu",  email: "derek@lunaluluenterprises.com", creds: "credentials-lunalulu.json",  color: "#c493ef" },
 ];
 
-const DEFAULT_DEPTH = 30;   // emails per account; UI can request up to MAX_DEPTH
-const MAX_DEPTH = 250;
+const DEFAULT_DAYS = 7;      // time window; UI offers 7 / 14 / 30
+const MAX_DAYS = 60;
+const MAX_PER_ACCOUNT = 500; // safety cap within the window
 const CACHE_TTL_MS = 60 * 1000;
+
+// Appointment-ish mail must never be shortcut into the promo bucket, even
+// when it carries bulk headers (Resy, OpenTable, Calendly all do).
+const APPT_RE = /reservation|appointment|booking|booked|invitation|invite\b|itinerar|check.?in|schedule|fitting|signature|sign\b|waiver|calendar|rsvp|confirm/i;
 
 // ---------------------------------------------------------------- Gmail ----
 
@@ -103,20 +111,21 @@ function isBulk(headers, labelIds, from) {
 function heuristicTier(msg) {
   const l = new Set(msg.labelIds || []);
   if (msg.starred) return "high";
+  if (APPT_RE.test(msg.subject)) return "high";
   if (msg.bulk) return "low";
   if (l.has("CATEGORY_UPDATES") || l.has("CATEGORY_FORUMS")) return "normal";
   return "high"; // non-bulk, non-category mail is almost always a real person
 }
 
-async function fetchAccount(account, depth) {
+async function fetchAccount(account, days) {
   const gmail = getClient(account);
   const ids = [];
   let pageToken;
-  while (ids.length < depth) {
+  while (ids.length < MAX_PER_ACCOUNT) {
     const list = await gmail.users.messages.list({
       userId: "me",
-      q: "in:inbox",
-      maxResults: Math.min(100, depth - ids.length),
+      q: `in:inbox newer_than:${days}d`,
+      maxResults: Math.min(100, MAX_PER_ACCOUNT - ids.length),
       pageToken,
     });
     ids.push(...(list.data.messages || []).map((m) => m.id));
@@ -150,7 +159,7 @@ async function fetchAccount(account, depth) {
       bulk: isBulk(headers, labelIds, from),
     };
     msg.tier = heuristicTier(msg);
-    msg.why = msg.bulk ? "bulk mail (unsubscribe header / promo category)" : "";
+    msg.why = msg.bulk && msg.tier === "low" ? "bulk mail (unsubscribe header / promo category)" : "";
     return msg;
   });
 }
@@ -181,8 +190,8 @@ function loadTriageCache() {
 
 function saveTriageCache(cache) {
   const ids = Object.keys(cache);
-  if (ids.length > 3000) {
-    for (const id of ids.slice(0, ids.length - 3000)) delete cache[id];
+  if (ids.length > 6000) {
+    for (const id of ids.slice(0, ids.length - 6000)) delete cache[id];
   }
   try {
     fs.writeFileSync(TRIAGE_CACHE_PATH, JSON.stringify(cache));
@@ -191,7 +200,7 @@ function saveTriageCache(cache) {
 
 // Bump this whenever TRIAGE_SYSTEM changes: cached verdicts from older rule
 // versions are ignored, so every email gets re-judged once under the new rules.
-const PROMPT_VERSION = 3;
+const PROMPT_VERSION = 4;
 
 const TRIAGE_SYSTEM = `You triage email for Derek Jaeger, the way Superhuman's "Important" split would — near-perfect separation of what deserves his attention from noise. His accounts:
 - personal: djaeger15@gmail.com (personal life)
@@ -202,11 +211,12 @@ const TRIAGE_SYSTEM = `You triage email for Derek Jaeger, the way Superhuman's "
 Classify each email:
 
 "high" — Derek needs to see it:
-- Real people writing to or about him, his family, or his businesses: customers, partners, vendors, employees, friends.
-- He is the owner and often CC'd on threads addressed to teammates. Conversations between real people about his businesses — introductions, negotiations, hiring, vendor/customer coordination — are high even when the greeting names someone else. Reply threads ("Re:") between humans conducting business are high unless clearly trivial.
-- ANYTHING involving appointments or scheduling: reservations, bookings, calendar invitations and event changes, meeting/call confirmations and reminders, deliveries needing action.
-- Action required from him: e-signature requests, document approvals, confirmations he must click, verification requests.
-- Money, legal, taxes, security alerts, fraud warnings, account problems, deadlines.
+- Real people writing to or about him, his family, or his businesses: customers, partners, vendors, contractors, employees, friends. Project threads (construction, design, legal, deals) are high even mid-thread.
+- He is the owner and often CC'd on threads addressed to teammates. Conversations between real people about his businesses — introductions, negotiations, hiring, vendor/customer coordination — are high even when the greeting names someone else. Reply threads ("Re:", "Fw:") between humans conducting business are high unless clearly trivial.
+- ANYTHING involving appointments or scheduling: restaurant/hotel reservations (Resy, OpenTable, Tock...), bookings, fittings, calendar invitations and event changes, meeting/call confirmations and reminders. These are high even though they come from automated platforms.
+- Action required from him: e-signature requests, waivers, document approvals, confirmations he must click, verification requests.
+- Money, legal, taxes (including government/state tax notices), security alerts, fraud warnings, account problems, deadlines.
+- When unsure between high and normal for mail involving a real human or a scheduled event, choose high — burying an important email is far worse than one extra in Priority.
 
 "normal" — legitimate, no action needed:
 - Receipts, payment confirmations, statements, order/shipping notices.
@@ -278,12 +288,16 @@ async function runAITriage(emails, ai, payload) {
   const pending = [];
   for (const m of emails) {
     const cached = cache[m.id];
+    const obviousPromo =
+      m.bulk &&
+      (m.labelIds.includes("CATEGORY_PROMOTIONS") || m.labelIds.includes("CATEGORY_SOCIAL")) &&
+      !APPT_RE.test(m.subject); // appointment-ish mail always gets a real judgment
     if (cached && cached.v === PROMPT_VERSION) {
       m.tier = cached.tier;
       m.why = cached.why;
       m.ai = true;
-    } else if (m.bulk && (m.labelIds.includes("CATEGORY_PROMOTIONS") || m.labelIds.includes("CATEGORY_SOCIAL"))) {
-      // obvious promo/social bulk: keep heuristic "low", no tokens needed
+    } else if (obviousPromo) {
+      // keep heuristic "low", no tokens needed
     } else {
       pending.push(m);
     }
@@ -317,21 +331,21 @@ async function runAITriage(emails, ai, payload) {
 
 // ------------------------------------------------------------------ fetch ----
 
-let cache = { at: 0, payload: null, pending: null, depth: 0 };
+let cache = { at: 0, payload: null, pending: null, days: 0 };
 
-async function getAllEmails(fresh, depth) {
+async function getAllEmails(fresh, days) {
   const now = Date.now();
-  if (!fresh && cache.payload && cache.depth === depth && now - cache.at < CACHE_TTL_MS) return cache.payload;
-  if (cache.pending && cache.depth === depth) return cache.pending;
+  if (!fresh && cache.payload && cache.days === days && now - cache.at < CACHE_TTL_MS) return cache.payload;
+  if (cache.pending && cache.days === days) return cache.pending;
 
-  cache.depth = depth;
+  cache.days = days;
   cache.pending = (async () => {
     const accounts = [];
     const emails = [];
     await Promise.all(
       ACCOUNTS.map(async (acc) => {
         try {
-          const msgs = await fetchAccount(acc, depth);
+          const msgs = await fetchAccount(acc, days);
           accounts.push({ alias: acc.alias, email: acc.email, color: acc.color, ok: true, count: msgs.length });
           emails.push(...msgs);
         } catch (err) {
@@ -348,7 +362,7 @@ async function getAllEmails(fresh, depth) {
     if (ai.key && emails.length) await runAITriage(emails, ai, payload);
 
     emails.sort((a, b) => b.dateMs - a.dateMs);
-    cache = { at: Date.now(), payload, pending: null, depth };
+    cache = { at: Date.now(), payload, pending: null, days };
     return payload;
   })();
 
@@ -373,12 +387,10 @@ const PAGE = `<!doctype html>
     --dim: #b9bdc9; --muted: #7e8494; --line: rgba(255,255,255,0.07);
     --accent: #8f93ff; --gold: #e8b64c; --warn-bg: #2b2214; --warn-line: #6b5426; --warn-ink: #e8c98b;
   }
-  @media (prefers-color-scheme: light) {
-    :root {
-      --bg: #f7f6f3; --panel: #ffffff; --hover: #edecea; --ink: #1c1d22;
-      --dim: #45474f; --muted: #82868f; --line: rgba(0,0,0,0.08);
-      --accent: #5a5fd6; --warn-bg: #fff4e5; --warn-line: #f0c188; --warn-ink: #7a4d09;
-    }
+  :root[data-theme="light"] {
+    --bg: #f7f6f3; --panel: #ffffff; --hover: #edecea; --ink: #1c1d22;
+    --dim: #45474f; --muted: #82868f; --line: rgba(0,0,0,0.08);
+    --accent: #5a5fd6; --warn-bg: #fff4e5; --warn-line: #f0c188; --warn-ink: #7a4d09;
   }
   * { box-sizing: border-box; }
   html { background: var(--bg); }
@@ -389,18 +401,18 @@ const PAGE = `<!doctype html>
   }
   .app { max-width: 820px; margin: 0 auto; padding: 30px 20px 100px; }
 
-  header.top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 26px; }
+  header.top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 26px; }
   .brand { font-size: 21px; font-weight: 700; letter-spacing: -0.02em; }
   .aibadge { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
     color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; }
   .aibadge.on { color: #5fd0a5; border-color: rgba(95,208,165,0.35); }
   .spacer { flex: 1; }
   .meta { color: var(--muted); font-size: 12.5px; }
-  select.depth, button.refresh {
+  select.depth, button.iconbtn {
     border: 1px solid var(--line); background: var(--panel); color: var(--dim);
     border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer;
   }
-  button.refresh:hover, select.depth:hover { color: var(--ink); border-color: var(--accent); }
+  button.iconbtn:hover, select.depth:hover { color: var(--ink); border-color: var(--accent); }
 
   .accounts { display: flex; gap: 6px; flex-wrap: wrap; }
   .chip {
@@ -469,19 +481,32 @@ const PAGE = `<!doctype html>
     <span class="aibadge" id="aibadge"></span>
     <span class="spacer"></span>
     <span class="meta" id="meta"></span>
-    <select class="depth" id="depth" title="How far back to load, per inbox">
-      <option value="30">Recent</option>
-      <option value="100">Deeper</option>
-      <option value="250">Way back</option>
+    <select class="depth" id="days" title="How far back to load">
+      <option value="7">Last 7 days</option>
+      <option value="14">Last 14 days</option>
+      <option value="30">Last 30 days</option>
     </select>
-    <button class="refresh" id="refresh" title="Refresh">↻</button>
+    <button class="iconbtn" id="theme" title="Toggle light/dark">◐</button>
+    <button class="iconbtn" id="refresh" title="Refresh">↻</button>
   </header>
   <div class="accounts" id="chips" style="margin-bottom:18px"></div>
   <div id="banners"></div>
   <main id="content"><div class="loading">Loading your four inboxes…</div></main>
 </div>
 <script>
-const state = { data: null, hidden: new Set(), showLow: false, depth: 30 };
+const state = { data: null, hidden: new Set(), showLow: false, days: 7 };
+
+if (localStorage.getItem("theme") === "light") document.documentElement.dataset.theme = "light";
+document.getElementById("theme").onclick = () => {
+  const root = document.documentElement;
+  if (root.dataset.theme === "light") {
+    delete root.dataset.theme;
+    localStorage.removeItem("theme");
+  } else {
+    root.dataset.theme = "light";
+    localStorage.setItem("theme", "light");
+  }
+};
 
 function timeAgo(ms) {
   if (!ms) return "";
@@ -498,7 +523,8 @@ function dayLabel(ms) {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   if (ms >= today) return "Today";
   if (ms >= today - 86400e3) return "Yesterday";
-  if (ms >= today - 6 * 86400e3) return "This week";
+  if (ms >= today - 6 * 86400e3)
+    return new Date(ms).toLocaleDateString(undefined, { weekday: "long" });
   if (ms >= today - 13 * 86400e3) return "Last week";
   return "Older";
 }
@@ -643,7 +669,7 @@ async function load(fresh) {
   if (!state.data) content.replaceChildren(el("div", "loading", "Loading your four inboxes…"));
   else meta.textContent = "loading…";
   try {
-    const res = await fetch("/api/emails?n=" + state.depth + (fresh ? "&fresh=1" : ""));
+    const res = await fetch("/api/emails?d=" + state.days + (fresh ? "&fresh=1" : ""));
     state.data = await res.json();
     render();
   } finally {
@@ -652,8 +678,8 @@ async function load(fresh) {
 }
 
 document.getElementById("refresh").onclick = () => load(true);
-document.getElementById("depth").onchange = (e) => {
-  state.depth = Number(e.target.value);
+document.getElementById("days").onchange = (e) => {
+  state.days = Number(e.target.value);
   load(false);
 };
 setInterval(() => load(true), 5 * 60 * 1000);
@@ -671,8 +697,8 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(PAGE);
     } else if (url.pathname === "/api/emails") {
-      const depth = Math.max(10, Math.min(MAX_DEPTH, parseInt(url.searchParams.get("n"), 10) || DEFAULT_DEPTH));
-      const data = await getAllEmails(url.searchParams.get("fresh") === "1", depth);
+      const days = Math.max(1, Math.min(MAX_DAYS, parseInt(url.searchParams.get("d"), 10) || DEFAULT_DAYS));
+      const data = await getAllEmails(url.searchParams.get("fresh") === "1", days);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(data));
     } else {
