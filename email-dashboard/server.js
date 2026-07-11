@@ -22,7 +22,7 @@ const os = require("os");
 const path = require("path");
 const { google } = require("googleapis");
 
-const VERSION = "v4";
+const VERSION = "v5";
 const PORT = 3777;
 const CONFIG_DIR = path.join(os.homedir(), ".gmail-mcp");
 const OAUTH_KEYS_PATH = path.join(CONFIG_DIR, "gcp-oauth.keys.json");
@@ -304,9 +304,13 @@ async function runAITriage(emails, ai, payload) {
     }
   }
 
+  const batches = [];
+  for (let start = 0; start < pending.length; start += 25) batches.push(pending.slice(start, start + 25));
+  let judged = 0;
+  if (pending.length) setProgress({ phase: "judging", done: 0, total: pending.length });
+
   try {
-    for (let start = 0; start < pending.length; start += 25) {
-      const batch = pending.slice(start, start + 25);
+    await mapLimit(batches, 4, async (batch) => {
       const results = await classifyBatch(anthropic, ai.model, batch);
       for (const r of results) {
         const m = batch[r.i];
@@ -316,7 +320,9 @@ async function runAITriage(emails, ai, payload) {
         m.ai = true;
         cache[m.id] = { tier: r.tier, why: r.why, v: PROMPT_VERSION };
       }
-    }
+      judged += batch.length;
+      setProgress({ phase: "judging", done: judged, total: pending.length });
+    });
     saveTriageCache(cache);
   } catch (err) {
     saveTriageCache(cache); // keep whatever finished
@@ -333,6 +339,8 @@ async function runAITriage(emails, ai, payload) {
 // ------------------------------------------------------------------ fetch ----
 
 let cache = { at: 0, payload: null, pending: null, days: 0 };
+let progressState = null;
+function setProgress(p) { progressState = p; }
 
 async function getAllEmails(fresh, days) {
   const now = Date.now();
@@ -341,6 +349,7 @@ async function getAllEmails(fresh, days) {
 
   cache.days = days;
   cache.pending = (async () => {
+    setProgress({ phase: "fetching" });
     const accounts = [];
     const emails = [];
     await Promise.all(
@@ -363,6 +372,7 @@ async function getAllEmails(fresh, days) {
     if (ai.key && emails.length) await runAITriage(emails, ai, payload);
 
     emails.sort((a, b) => b.dateMs - a.dateMs);
+    setProgress(null);
     cache = { at: Date.now(), payload, pending: null, days };
     return payload;
   })();
@@ -671,11 +681,25 @@ async function load(fresh) {
   const meta = document.getElementById("meta");
   if (!state.data) content.replaceChildren(el("div", "loading", "Loading your four inboxes…"));
   else meta.textContent = "loading…";
+  const poll = setInterval(async () => {
+    try {
+      const p = await (await fetch("/api/progress")).json();
+      const label =
+        p.phase === "judging" ? "AI judging " + p.done + " of " + p.total + "…" :
+        p.phase === "fetching" ? "fetching mail…" : null;
+      if (label) {
+        meta.textContent = label;
+        const ld = document.querySelector(".loading");
+        if (ld) ld.textContent = "Loading your four inboxes — " + label;
+      }
+    } catch { /* server busy; try next tick */ }
+  }, 1200);
   try {
     const res = await fetch("/api/emails?d=" + state.days + (fresh ? "&fresh=1" : ""));
     state.data = await res.json();
     render();
   } finally {
+    clearInterval(poll);
     loading = false;
   }
 }
@@ -699,6 +723,9 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/") {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(PAGE);
+    } else if (url.pathname === "/api/progress") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(progressState || { idle: true }));
     } else if (url.pathname === "/api/emails") {
       const days = Math.max(1, Math.min(MAX_DAYS, parseInt(url.searchParams.get("d"), 10) || DEFAULT_DAYS));
       const data = await getAllEmails(url.searchParams.get("fresh") === "1", days);
