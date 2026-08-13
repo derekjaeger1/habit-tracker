@@ -22,7 +22,7 @@ const os = require("os");
 const path = require("path");
 const { google } = require("googleapis");
 
-const VERSION = "v5";
+const VERSION = "v6";
 const PORT = 3777;
 const CONFIG_DIR = path.join(os.homedir(), ".gmail-mcp");
 const OAUTH_KEYS_PATH = path.join(CONFIG_DIR, "gcp-oauth.keys.json");
@@ -385,6 +385,32 @@ async function getAllEmails(fresh, days) {
   }
 }
 
+// ------------------------------------------------------- full email body ----
+
+function decodeB64Url(data) {
+  return Buffer.from(data.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
+}
+
+// Walk the MIME tree; prefer HTML, fall back to plain text.
+function extractBody(payload) {
+  let html = null, text = null;
+  (function walk(p) {
+    if (!p) return;
+    if (p.mimeType === "text/html" && p.body?.data && !html) html = decodeB64Url(p.body.data);
+    else if (p.mimeType === "text/plain" && p.body?.data && !text) text = decodeB64Url(p.body.data);
+    (p.parts || []).forEach(walk);
+  })(payload);
+  return { html, text };
+}
+
+async function getMessageBody(alias, id) {
+  const acc = ACCOUNTS.find((a) => a.alias === alias);
+  if (!acc) throw new Error("unknown account");
+  const gmail = getClient(acc);
+  const r = await gmail.users.messages.get({ userId: "me", id, format: "full" });
+  return extractBody(r.data.payload);
+}
+
 // ------------------------------------------------------------------- UI ----
 
 const PAGE = `<!doctype html>
@@ -481,6 +507,9 @@ const PAGE = `<!doctype html>
   .addr { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
   .gmail { display: inline-block; color: var(--accent); text-decoration: none;
     font-size: 13px; font-weight: 600; border: 1px solid var(--line); border-radius: 8px; padding: 6px 14px; }
+  .bodyholder { margin: 12px 0; color: var(--muted); font-size: 13px; }
+  iframe.body { width: 100%; height: 520px; border: 1px solid var(--line); border-radius: 12px;
+    background: #ffffff; display: block; }
   .gmail:hover { border-color: var(--accent); }
   .empty { padding: 20px 14px; color: var(--muted); font-size: 13.5px; }
   .loading { color: var(--muted); padding: 60px 0; text-align: center; }
@@ -547,6 +576,10 @@ function initials(name) {
   const words = name.replace(/[^\\p{L}\\p{N} ]/gu, " ").trim().split(/\\s+/).filter(Boolean);
   if (!words.length) return "?";
   return (words[0][0] + (words[1] ? words[1][0] : "")).toUpperCase();
+}
+
+function escapeHtml(t) {
+  return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function el(tag, cls, text) {
@@ -616,7 +649,28 @@ function buildRow(m) {
   expand.append(link);
   main.append(l1, l2, expand);
   row.append(av, main);
-  row.onclick = () => row.classList.toggle("open");
+  let bodyLoaded = false;
+  row.onclick = () => {
+    row.classList.toggle("open");
+    if (!row.classList.contains("open") || bodyLoaded) return;
+    bodyLoaded = true;
+    const holder = el("div", "bodyholder", "loading email…");
+    expand.insertBefore(holder, link);
+    fetch("/api/message?account=" + m.account + "&id=" + m.id)
+      .then((r) => r.json())
+      .then((b) => {
+        holder.textContent = "";
+        const iframe = document.createElement("iframe");
+        iframe.className = "body";
+        iframe.setAttribute("sandbox", "allow-popups allow-popups-to-escape-sandbox");
+        iframe.srcdoc = b.html
+          ? '<base target="_blank">' + b.html
+          : '<base target="_blank"><pre style="white-space:pre-wrap;font:14px/1.6 system-ui;margin:14px">' +
+            escapeHtml(b.text || "(no content)") + "</pre>";
+        holder.append(iframe);
+      })
+      .catch(() => { holder.textContent = "couldn't load email body — use Open in Gmail below"; });
+  };
   return row;
 }
 
@@ -724,6 +778,10 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/") {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(PAGE);
+    } else if (url.pathname === "/api/message") {
+      const body = await getMessageBody(url.searchParams.get("account"), url.searchParams.get("id"));
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(body));
     } else if (url.pathname === "/api/progress") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(progressState || { idle: true }));
